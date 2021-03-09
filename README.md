@@ -114,7 +114,7 @@ then runs a specified command. You can use it to isolate an existing
 build tool or test runner, e.g.,
 
 ```
-isolate "net shm" python -m unittest
+ts_isolate "net shm" python -m unittest
 ```
 
 Finally, the C library is available for direct use from any language
@@ -126,7 +126,7 @@ For instance, if you have a test wrapper in Python, you might want to
 call
 
 ```python
-lib = ctypes.CDLL("ts_isolate.so")
+lib = ctypes.CDLL("path/to/ts_isolate.so")
 if lib.ts_isolate(" ".join(profiles)) != 0:
     raise Exception("ts_isolate failed")
 ```
