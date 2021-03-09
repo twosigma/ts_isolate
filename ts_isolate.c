@@ -56,13 +56,8 @@
 
 
 #define _GNU_SOURCE
-#include <linux/audit.h>
-#include <linux/bpf_common.h>
-#include <linux/capability.h>
-#include <linux/filter.h>
-#include <linux/if.h>
-#include <linux/route.h>
-#include <linux/seccomp.h>
+/* Older kernel headers are sensitive to include order - at the least,
+ * sys/socket.h needs to come before linux/if.h and linux/route.h */
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
@@ -70,6 +65,13 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <linux/audit.h>
+#include <linux/bpf_common.h>
+#include <linux/capability.h>
+#include <linux/filter.h>
+#include <linux/if.h>
+#include <linux/route.h>
+#include <linux/seccomp.h>
 #include <err.h>
 #include <fcntl.h>
 #include <sched.h>
