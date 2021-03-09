@@ -59,8 +59,8 @@ causes a network request to your GitLab instance. Even if you mock the
 `GITLAB` object when writing a test for `list_overdue_merge_requests`,
 you've already made the network access just by loading this module.
 
-Since your GitLab instance is _usually_ running, you may not notice this
-- but if GitLab fails and you're trying to merge something to get it
+Since your GitLab instance is _usually_ running, you may not notice this -
+but if GitLab fails and you're trying to merge something to get it
 back up, this may be the worst time for your "green" build to suddenly
 turn "red".
 
