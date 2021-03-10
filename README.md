@@ -42,33 +42,33 @@ Why would you want this?
 ===
 
 Let's say you're writing some Python code that accesses your internal
-GitLab:
+Jira:
 
 ```python
-import gitlab
+import jira
 
-GITLAB = gitlab.Gitlab("https://gitlab.example.com")
+JIRA_CLIENT = jira.JIRA("https://jira.example.com")
 
-def list_overdue_merge_requests(self):
-    project = GITLAB.projects.get(...)
-    ...
+def list_overdue_tickets(user):
+    for issue in JIRA_CLIENT.search_issues(...):
+        ...
 ```
 
-Simply importing this code causes a client to be created, which
-causes a network request to your GitLab instance. Even if you mock the
-`GITLAB` object when writing a test for `list_overdue_merge_requests`,
+Simply importing this code causes a client to be created, which causes a
+network request to your Jira instance. Even if you mock the
+`JIRA_CLIENT` object when writing a test for `list_overdue_tickets`,
 you've already made the network access just by loading this module.
 
-Since your GitLab instance is _usually_ running, you may not notice this -
-but if GitLab fails and you're trying to merge something to get it
-back up, this may be the worst time for your "green" build to suddenly
-turn "red".
+Since your Jira instance is _usually_ running, you may not notice this -
+but if Jira fails and you're trying to merge something to get it back
+up, this may be the worst time for your "green" build to suddenly turn
+"red".
 
 `ts_isolate` prevents this by making sure your builds and tests -
 including the builds and tests run locally by a developer before they
 submit a change to CI - run under network isolation. Then, even when
-your GitLab instance is running, a developer will immediately see the
-code above fail to compile or test.
+your Jira instance is running, a developer will immediately see the code
+above fail to compile or test.
 
 Using the library
 ===
