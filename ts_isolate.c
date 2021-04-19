@@ -97,7 +97,7 @@ extern int capget(cap_user_header_t header, const cap_user_data_t data);
 /*** Helpers, mostly for error handling ***/
 
 static int
-write_file(const char *filename, const char *format, ...)
+vwrite_file(const char *filename, const char *format, va_list ap)
 {
     FILE *stream = fopen(filename, "we");
     if (!stream) {
@@ -105,15 +105,11 @@ write_file(const char *filename, const char *format, ...)
         return -1;
     }
 
-    va_list ap;
-    va_start(ap, format);
     if (vfprintf(stream, format, ap) < 0) {
         warn("ts_isolate: writing to %s", filename);
-        va_end(ap);
         fclose(stream);
         return -1;
     }
-    va_end(ap);
 
     if (fclose(stream) != 0) {
         warn("ts_isolate: close %s", filename);
@@ -123,41 +119,103 @@ write_file(const char *filename, const char *format, ...)
 }
 
 static int
+write_file(const char *filename, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int ret = vwrite_file(filename, format, ap);
+    va_end(ap);
+    return ret;
+}
+
+static char *tempdir = NULL;
+
+static int
 overwrite_file(const char *filename, const char *format, ...)
 {
-    char tempname[] = "/tmp/ts_isolate.XXXXXX";
-    int fd = mkostemp(tempname, O_CLOEXEC);
-    if (fd < 0) {
-        warn("ts_isolate: mkstemp");
+    /* Write to a file we don't have write access to by bind-mounting a
+     * new temporary file on top.
+     *
+     * The most obvious option is to use a normal temporary file routine
+     * like mkstemp, but we don't have a good spot to clean it up. The
+     * next-most-obvious option is to use a normal temporary file, bind
+     * mount it, and then unlink it before returning control. This
+     * _does_ work and the file doesn't get deleted from disk until the
+     * mount is gone (it is treated much like a deleted open file), but
+     * because it's deleted, you can't mount over it, i.e., you can't
+     * nest ts_isolate inside ts_isolate (or a similar tool).
+     *
+     * So we create a temporary tmpfs, bind-mount a file inside it, and
+     * unmount the tmpfs before returning control. This has the same
+     * properties about keeping an open file in RAM until it's no longer
+     * referenced, but it permits you to mount over it.
+     *
+     * (O_TMPFILE isn't an option here because the file is nameless and
+     * therefore can't be bind-mounted at all.) */
+    if (tempdir == NULL) {
+        char template[] = "/tmp/ts_isolate.XXXXXX";
+        if (mkdtemp(template) == NULL) {
+            warn("ts_isolate: mkdtemp");
+            return -1;
+        }
+        tempdir = strdup(template);
+        if (tempdir == NULL) {
+            warn("ts_isolate: strdup");
+            rmdir(template);
+            return -1;
+        }
+        if (mount("tmpfs", tempdir, "tmpfs", 0, NULL) != 0) {
+            warn("ts_isolate: mount tmpfs");
+            rmdir(tempdir);
+            free(tempdir);
+            tempdir = NULL;
+            return -1;
+        }
+    }
+
+    char *tempname;
+    if (asprintf(&tempname, "%s/%s", tempdir, filename) < 0) {
+        warn("ts_isolate: asprintf");
+        /* From here on out, ts_isolate() will take care of making sure
+         * to call cleanup_tempdir() */
         return -1;
     }
-    if (mount(tempname, filename, NULL, MS_BIND, NULL) != 0) {
-        warn("ts_isolate: bind mount over %s", filename);
-        close(fd);
-        return -1;
-    }
-    FILE *stream = fdopen(fd, "w");
-    if (!stream) {
-        warn("ts_isolate: fdopen");
-        close(fd);
-        return -1;
+    for (char *s = strchr(tempname + strlen(tempdir) + 1, '/');
+         s != NULL;
+         s = strchr(s, '/')) {
+        *s = '-';
     }
 
     va_list ap;
     va_start(ap, format);
-    if (vfprintf(stream, format, ap) < 0) {
-        warn("ts_isolate: writing to %s", filename);
-        va_end(ap);
-        fclose(stream);
-        return -1;
-    }
+    int ret = vwrite_file(tempname, format, ap);
     va_end(ap);
-
-    if (fclose(stream) != 0) {
-        warn("ts_isolate: close %s", filename);
+    if (ret != 0) {
+        free(tempname);
         return -1;
     }
+
+    if (mount(tempname, filename, NULL, MS_BIND, NULL) != 0) {
+        warn("ts_isolate: bind mount over %s", filename);
+        free(tempname);
+        return -1;
+    }
+
+    free(tempname);
     return 0;
+}
+
+static void
+cleanup_tempdir(void)
+{
+    if (tempdir == NULL)
+        return;
+
+    umount(tempdir);
+    rmdir(tempdir);
+    free(tempdir);
+    /* Just in case we're called twice in the same process... */
+    tempdir = NULL;
 }
 
 static int make_chown_a_noop(void) {
@@ -455,22 +513,6 @@ ts_isolate(const char *profiles)
             return -1;
         }
 
-        if (make_chown_a_noop() != 0) {
-            return -1;
-        }
-    }
-
-    /* Implement specific profiles */
-    for (i = 0; i < num_specs; i++) {
-        if (specs[i].enabled) {
-            if (specs[i].perform() != 0) {
-                return -1;
-            }
-        }
-    }
-
-    /* Finish user namespace creation */
-    if (clone_args) {
         if (write_file("/proc/self/setgroups", "deny") != 0) {
             return -1;
         }
@@ -480,7 +522,22 @@ ts_isolate(const char *profiles)
         if (write_file("/proc/self/uid_map", "%1$d %1$d 1", orig_uid) != 0) {
             return -1;
         }
+
+        if (make_chown_a_noop() != 0) {
+            return -1;
+        }
     }
+
+    /* Implement specific profiles */
+    for (i = 0; i < num_specs; i++) {
+        if (specs[i].enabled) {
+            if (specs[i].perform() != 0) {
+                cleanup_tempdir();
+                return -1;
+            }
+        }
+    }
+    cleanup_tempdir();
 
     return 0;
 }
