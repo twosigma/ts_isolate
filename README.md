@@ -87,6 +87,9 @@ space-separated list of isolation profiles, any of
 * `gcc`: Deny access to `/usr/bin/gcc` and `/usr/bin/g++`, for
   environments where code should be using a separate compiler instead of
   an OS-packaged one.
+* `python`: Deny access to system `python` and `python3` in `/usr/bin`, 
+  For projects where code should be using a separate interpreter instead of an
+  OS-packaged one.
 
 Call `ts_isolate` at the beginning of your build or test runner, before
 it runs any user-provided code. In our monorepo, the very first step in

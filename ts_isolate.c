@@ -392,6 +392,23 @@ ts_isolate_gcc(void)
 }
 
 static int
+ts_isolate_python(void)
+{
+    const char *script = "#!/bin/sh\necho error: \"$0\" from OS not allowed >&2\nexit 1\n";
+    const char *programs[] = {"/usr/bin/python", "/usr/bin/python3", NULL};
+    for (int i = 0; programs[i]; i++) {
+        if (overwrite_file(programs[i], "%s", script) != 0) {
+            return -1;
+        }
+        if (chmod(programs[i], 0755) != 0) {
+            warn("ts_isolate: chmod 755 %s", programs[i]);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int
 ts_isolate_ambient_admin(void)
 {
     /* This is only intended for tests that need to run fusermount,
@@ -466,6 +483,11 @@ ts_isolate(const char *profiles)
             .name = "gcc",
             .perform = ts_isolate_gcc,
             .namespaces = CLONE_NEWNS,
+        },
+        {
+            .name = "python",
+            .perform = ts_isolate_python,
+            .namespaces = CLONE_NEWNS
         },
         {
             .name = "ambient_admin",
